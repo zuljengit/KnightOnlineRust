@@ -1,0 +1,12 @@
+[general]
+listen_port = 15100
+last_version = 1298
+
+[download]
+ftp_url = "127.0.0.1"
+ftp_path = "/"
+
+[[servers]]
+ip = "127.0.0.1"
+name = "Server 1"
+user_limit = 1000

@@ -14,6 +14,7 @@ Originally part of the [OpenKO](https://github.com/Open-KO/KnightOnline) project
 ```
 login-server/
   assets/login-server.ico   Icon embedded into the exe
+  config.toml                Server configuration (ports, server list, FTP settings)
   src/main.rs                All server logic
   build.rs                   Build script (embeds the icon on Windows)
   Cargo.toml                 Dependencies and project config
@@ -28,7 +29,7 @@ cargo run
 This compiles and runs in debug mode. You should see:
 
 ```
-VersionManager (Rust) listening on 0.0.0.0:15100
+Login Server listening on 0.0.0.0:15100
 ```
 
 The server listens on TCP port 15100 and accepts KO client connections.
@@ -45,7 +46,50 @@ The optimized exe is at:
 target/release/login-server.exe
 ```
 
-This is a standalone binary — copy it anywhere, no Rust installation needed to run it.
+Place config.toml next to the exe before running it.
+
+This is a standalone binary. Copy it anywhere, no Rust installation needed to run it.
+
+## Configuration
+
+Edit `config.toml` to change the listen port, game version, FTP settings and server list:
+
+```toml
+[general]
+listen_port = 15100
+last_version = 1298
+
+[download]
+ftp_url = "127.0.0.1"
+ftp_path = "/"
+
+[[servers]]
+ip = "127.0.0.1"
+name = "TEST|Server 1"
+user_limit = 3000
+```
+
+Multiple game servers can be listed by repeating the `[[servers]]` block.
+
+## Code quality
+
+Format the code according to the Rust standard style:
+
+```
+cargo fmt
+```
+
+Run the linter to catch common mistakes and get suggestions for more idiomatic code:
+
+```
+cargo clippy
+```
+
+Run the unit tests:
+
+```
+cargo test
+```
 
 ## Protocol
 
