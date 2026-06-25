@@ -14,3 +14,5 @@ user_limit = 1000
 [news]
 title = "Login Notice"
 message = "Welcome to Knight Online!"
+
+pacthes = []

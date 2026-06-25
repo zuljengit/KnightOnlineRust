@@ -1,9 +1,8 @@
 mod config;
 mod protocol;
 
-use config::{Config, ServerState};
-use protocol::handle;
-use protocol::{deframe, frame};
+use config::{Config, HandlerContext, PatchEntry, ServerState};
+use protocol::{deframe, frame, handle};
 use std::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -34,19 +33,31 @@ async fn main() -> std::io::Result<()> {
     loop {
         let (mut socket, addr) = listener.accept().await?;
 
-        let last_version = config.general.last_version;
-        let servers: Vec<ServerState> = config
-            .servers
-            .iter()
-            .map(|s| ServerState {
-                ip: s.ip.clone(),
-                name: s.name.clone(),
-                user_count: 0,
-                user_limit: s.user_limit,
-            })
-            .collect();
-        let news_title = config.news.title.clone();
-        let news_message = config.news.message.clone();
+        let ctx = HandlerContext {
+            last_version: config.general.last_version,
+            servers: config
+                .servers
+                .iter()
+                .map(|s| ServerState {
+                    ip: s.ip.clone(),
+                    name: s.name.clone(),
+                    user_count: 0,
+                    user_limit: s.user_limit,
+                })
+                .collect(),
+            news_title: config.news.title.clone(),
+            news_message: config.news.message.clone(),
+            ftp_url: config.download.ftp_url.clone(),
+            ftp_path: config.download.ftp_path.clone(),
+            patches: config
+                .patches
+                .iter()
+                .map(|p| PatchEntry {
+                    filename: p.filename.clone(),
+                    version: p.version,
+                })
+                .collect(),
+        };
 
         tokio::spawn(async move {
             println!("Client connected with IP: {addr}");
@@ -58,8 +69,7 @@ async fn main() -> std::io::Result<()> {
                     Err(_) => return,
                 };
                 if let Some(payload) = deframe(&buf[..bytes_read])
-                    && let Some(reply) =
-                        handle(&payload, last_version, &servers, &news_title, &news_message)
+                    && let Some(reply) = handle(&payload, &ctx)
                 {
                     let framed = frame(&reply);
                     let _ = socket.write_all(&framed).await;
