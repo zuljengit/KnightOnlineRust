@@ -1,11 +1,16 @@
 mod config;
+mod db;
 mod protocol;
 
 use config::{Config, HandlerContext, PatchEntry, ServerState};
-use protocol::{deframe, frame, handle};
+use db::Database;
+use protocol::{FrameResult, LS_LOGIN_REQ, extract_frame, frame, handle};
 use std::fs;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -15,23 +20,25 @@ async fn main() -> std::io::Result<()> {
         let _ = std::io::stdin().read_line(&mut String::new());
     }));
 
-    let config_path = std::env::current_exe()
+    let config_path: PathBuf = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("config.toml")))
         .filter(|p| p.exists())
         .unwrap_or_else(|| std::path::PathBuf::from("config.toml"));
 
-    let config_text = fs::read_to_string(&config_path)
+    let config_text: String = fs::read_to_string(&config_path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", config_path.display(), e));
 
     let config: Config = toml::from_str(&config_text).expect("Failed to parse config.toml");
 
-    let addr = format!("0.0.0.0:{}", config.general.listen_port);
-    let listener: TcpListener = TcpListener::bind(&addr).await?;
-    println!("Login Server listening on: {}", addr);
+    let database: Arc<Database> = Arc::new(Database::new(&config.database));
+
+    let bind_addr: String = format!("0.0.0.0:{}", config.general.listen_port);
+    let listener: TcpListener = TcpListener::bind(&bind_addr).await?;
+    println!("Login Server listening on: {}", bind_addr);
 
     loop {
-        let (mut socket, addr) = listener.accept().await?;
+        let (mut socket, addr): (TcpStream, SocketAddr) = listener.accept().await?;
 
         let ctx = HandlerContext {
             last_version: config.general.last_version,
@@ -59,20 +66,51 @@ async fn main() -> std::io::Result<()> {
                 .collect(),
         };
 
+        let db: Arc<Database> = Arc::clone(&database);
+
         tokio::spawn(async move {
             println!("Client connected with IP: {addr}");
+
+            let mut accumulator: Vec<u8> = Vec::new();
             let mut buf: Vec<u8> = vec![0; 16 * 1024];
+
             loop {
-                let bytes_read = match socket.read(&mut buf).await {
+                let bytes_read: usize = match socket.read(&mut buf).await {
                     Ok(0) => return,
                     Ok(n) => n,
                     Err(_) => return,
                 };
-                if let Some(payload) = deframe(&buf[..bytes_read])
-                    && let Some(reply) = handle(&payload, &ctx)
-                {
-                    let framed = frame(&reply);
-                    let _ = socket.write_all(&framed).await;
+
+                accumulator.extend_from_slice(&buf[..bytes_read]);
+
+                // Safety valve against a flood of garbage that never forms a valid frame.
+                if accumulator.len() > 64 * 1024 {
+                    eprintln!("Accumulator overflow from {addr}, dropping connection");
+                    return;
+                }
+
+                loop {
+                    match extract_frame(&accumulator) {
+                        FrameResult::Packet { payload, consumed } => {
+                            accumulator.drain(..consumed);
+
+                            let reply: Option<Vec<u8>> = if payload.first() == Some(&LS_LOGIN_REQ) {
+                                db.handle_login(&payload).await
+                            } else {
+                                handle(&payload, &ctx)
+                            };
+
+                            if let Some(reply) = reply {
+                                let framed: Vec<u8> = frame(&reply);
+                                let _ = socket.write_all(&framed).await;
+                            }
+                        }
+                        FrameResult::Skip { consumed } => {
+                            accumulator.drain(..consumed);
+                            // No reply for garbage; loop again to process the rest.
+                        }
+                        FrameResult::NeedMore => break, // wait for the next socket read
+                    }
                 }
             }
         });

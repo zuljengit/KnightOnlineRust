@@ -7,7 +7,9 @@ pub struct Config {
     pub download: DownloadConfig,
     pub servers: Vec<ServerConfig>,
     pub news: NewsConfig,
+    #[serde(default)]
     pub patches: Vec<PatchConfig>,
+    pub database: DatabaseConfig,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +42,15 @@ pub struct NewsConfig {
 pub struct PatchConfig {
     pub filename: String,
     pub version: i16,
+}
+
+#[derive(Deserialize)]
+pub struct DatabaseConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub database: String,
 }
 
 pub struct HandlerContext {

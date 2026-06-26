@@ -15,4 +15,11 @@ user_limit = 1000
 title = "Login Notice"
 message = "Welcome to Knight Online!"
 
-pacthes = []
+patches = []
+
+[database]
+host = "localhost"
+port = 1433
+username = "knight"
+password = "knight"
+database = "KN_online"

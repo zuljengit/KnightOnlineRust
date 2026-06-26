@@ -6,7 +6,10 @@ edition = "2024"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = "1"
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "chrono", "rustls"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+chrono = "0.4"
 
 [build-dependencies]
 winres = "0.1"
