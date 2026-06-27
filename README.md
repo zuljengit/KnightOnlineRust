@@ -12,7 +12,7 @@ The original OpenKO project faithfully reconstructs the Knight Online 1.298 clie
 
 | Component | Original | Status |
 |-----------|----------|--------|
-| Login Server (VersionManager) | C++ | In progress (Rust) |
+| Login Server (VersionManager) | C++ | In testing (Rust) |
 | AIServer | C++ | Not started |
 | Ebenezer | C++ | Not started |
 | Aujard | C++ | Not started |
