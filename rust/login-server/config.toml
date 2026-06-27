@@ -7,8 +7,9 @@ ftp_url = "127.0.0.1"
 ftp_path = "/"
 
 [[servers]]
+id = 1
 ip = "127.0.0.1"
-name = "Server 1"
+name = "Rust Server"
 user_limit = 1000
 
 [news]

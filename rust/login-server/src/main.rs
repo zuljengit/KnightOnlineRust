@@ -2,7 +2,7 @@ mod config;
 mod db;
 mod protocol;
 
-use config::{Config, HandlerContext, PatchEntry, ServerState};
+use config::{Config, HandlerContext, PatchEntry, ServerState, SharedServerList};
 use db::Database;
 use protocol::{FrameResult, LS_LOGIN_REQ, extract_frame, frame, handle};
 use std::fs;
@@ -11,6 +11,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{RwLock, RwLockWriteGuard};
+use tokio::time::{Duration, Interval, interval};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -31,7 +33,42 @@ async fn main() -> std::io::Result<()> {
 
     let config: Config = toml::from_str(&config_text).expect("Failed to parse config.toml");
 
-    let database: Arc<Database> = Arc::new(Database::new(&config.database));
+    let database: Arc<Database> = Arc::new(Database::new(&config.database).await);
+
+    let servers: SharedServerList = Arc::new(RwLock::new(
+        config
+            .servers
+            .iter()
+            .map(|s| ServerState {
+                id: s.id,
+                ip: s.ip.clone(),
+                name: s.name.clone(),
+                user_count: 0,
+                user_limit: s.user_limit,
+            })
+            .collect(),
+    ));
+
+    // Background task: update user counts every 30 seconds
+    let bg_db: Arc<Database> = Arc::clone(&database);
+    let bg_servers: SharedServerList = Arc::clone(&servers);
+    tokio::spawn(async move {
+        let mut timer: Interval = interval(Duration::from_secs(30));
+        loop {
+            timer.tick().await;
+            let counts: Vec<(u8, i16)> = bg_db.load_user_counts().await;
+            let mut server_list: RwLockWriteGuard<Vec<ServerState>> = bg_servers.write().await;
+            for server in server_list.iter_mut() {
+                let count: i16 = counts
+                    .iter()
+                    .find(|(id, _)| *id == server.id)
+                    .map(|(_, c)| *c)
+                    .unwrap_or(0);
+                server.user_count = count;
+            }
+            println!("Updated user counts: {:?}", counts);
+        }
+    });
 
     let bind_addr: String = format!("0.0.0.0:{}", config.general.listen_port);
     let listener: TcpListener = TcpListener::bind(&bind_addr).await?;
@@ -40,18 +77,12 @@ async fn main() -> std::io::Result<()> {
     loop {
         let (mut socket, addr): (TcpStream, SocketAddr) = listener.accept().await?;
 
-        let ctx = HandlerContext {
+        // Snapshot the server list for this connection
+        let server_snapshot: Vec<ServerState> = servers.read().await.clone();
+
+        let ctx: HandlerContext = HandlerContext {
             last_version: config.general.last_version,
-            servers: config
-                .servers
-                .iter()
-                .map(|s| ServerState {
-                    ip: s.ip.clone(),
-                    name: s.name.clone(),
-                    user_count: 0,
-                    user_limit: s.user_limit,
-                })
-                .collect(),
+            servers: server_snapshot,
             news_title: config.news.title.clone(),
             news_message: config.news.message.clone(),
             ftp_url: config.download.ftp_url.clone(),
@@ -83,7 +114,6 @@ async fn main() -> std::io::Result<()> {
 
                 accumulator.extend_from_slice(&buf[..bytes_read]);
 
-                // Safety valve against a flood of garbage that never forms a valid frame.
                 if accumulator.len() > 64 * 1024 {
                     eprintln!("Accumulator overflow from {addr}, dropping connection");
                     return;
@@ -107,9 +137,8 @@ async fn main() -> std::io::Result<()> {
                         }
                         FrameResult::Skip { consumed } => {
                             accumulator.drain(..consumed);
-                            // No reply for garbage; loop again to process the rest.
                         }
-                        FrameResult::NeedMore => break, // wait for the next socket read
+                        FrameResult::NeedMore => break,
                     }
                 }
             }

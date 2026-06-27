@@ -17,6 +17,7 @@ pub const AUTH_NOT_FOUND: u8 = 0x02;
 pub const AUTH_INVALID_PW: u8 = 0x03;
 pub const AUTH_BANNED: u8 = 0x04;
 pub const AUTH_IN_GAME: u8 = 0x05;
+pub const AUTH_FAILED: u8 = 0xFF;
 
 pub const MAX_ID_SIZE: usize = 20;
 pub const MAX_PW_SIZE: usize = 12;
@@ -613,6 +614,7 @@ mod tests {
     #[test]
     fn handle_server_list_when_server_is_full() {
         let full_server: Vec<ServerState> = vec![ServerState {
+            id: 1,
             ip: TEST_SERVER_IP.to_string(),
             name: TEST_SERVER_NAME.to_string(),
             user_count: 3001,
@@ -771,6 +773,7 @@ mod tests {
 
     fn test_servers() -> Vec<ServerState> {
         vec![ServerState {
+            id: 1,
             ip: TEST_SERVER_IP.to_string(),
             name: TEST_SERVER_NAME.to_string(),
             user_count: TEST_SERVER_USER_COUNT,

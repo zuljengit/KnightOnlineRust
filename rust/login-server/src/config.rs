@@ -1,4 +1,8 @@
 use serde::Deserialize;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+pub type SharedServerList = Arc<RwLock<Vec<ServerState>>>;
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -27,8 +31,18 @@ pub struct DownloadConfig {
 
 #[derive(Deserialize)]
 pub struct ServerConfig {
+    pub id: u8,
     pub ip: String,
     pub name: String,
+    pub user_limit: i16,
+}
+
+#[derive(Clone)]
+pub struct ServerState {
+    pub id: u8,
+    pub ip: String,
+    pub name: String,
+    pub user_count: i16,
     pub user_limit: i16,
 }
 
@@ -61,13 +75,6 @@ pub struct HandlerContext {
     pub ftp_url: String,
     pub ftp_path: String,
     pub patches: Vec<PatchEntry>,
-}
-
-pub struct ServerState {
-    pub ip: String,
-    pub name: String,
-    pub user_count: i16,
-    pub user_limit: i16,
 }
 
 pub struct PatchEntry {

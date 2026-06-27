@@ -48,6 +48,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "bb8"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "457d7ed3f888dfd2c7af56d4975cade43c622f74bdcddfed6d4352f57acc6310"
+dependencies = [
+ "futures-util",
+ "parking_lot",
+ "portable-atomic",
+ "tokio",
+]
+
+[[package]]
+name = "bb8-tiberius"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a5023b318f47a294d02b46ce0d82ac8e7df0afce2257f041ba7316566d6cd56"
+dependencies = [
+ "bb8",
+ "thiserror",
+ "tiberius",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
 name = "bitflags"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -226,13 +257,24 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fc3cb4d91f53b50155bdcfd23f6a4c39ae1969c2ae85982b135750cccaf5fce"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "wasi 0.9.0+wasi-snapshot-preview1",
+]
+
+[[package]]
+name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi",
+ "wasi 0.11.1+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -311,14 +353,21 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 name = "login-server"
 version = "0.1.0"
 dependencies = [
+ "bb8",
+ "bb8-tiberius",
  "chrono",
  "serde",
  "tiberius",
  "tokio",
- "tokio-util",
  "toml 1.1.2+spec-1.1.0",
  "winres",
 ]
+
+[[package]]
+name = "md5"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e6bcd6433cff03a4bfc3d9834d504467db1f1cf6d0ea765d37d330249ed629d"
 
 [[package]]
 name = "memchr"
@@ -333,7 +382,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02bd0af71c67b473010cbbc60715ee815645a4dc942899111f494b4b737d6fda"
 dependencies = [
  "libc",
- "wasi",
+ "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
 ]
 
@@ -388,6 +437,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "portable-atomic"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
+
+[[package]]
+name = "ppv-lite86"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
+dependencies = [
+ "zerocopy",
+]
+
+[[package]]
 name = "pretty-hex"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -412,12 +476,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
+dependencies = [
+ "getrandom 0.1.16",
+ "libc",
+ "rand_chacha",
+ "rand_core",
+ "rand_hc",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
+dependencies = [
+ "ppv-lite86",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
+dependencies = [
+ "getrandom 0.1.16",
+]
+
+[[package]]
+name = "rand_hc"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
+dependencies = [
+ "rand_core",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
 ]
 
 [[package]]
@@ -428,7 +533,7 @@ checksum = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
 dependencies = [
  "cc",
  "cfg-if",
- "getrandom",
+ "getrandom 0.2.17",
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
@@ -514,7 +619,7 @@ version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.0",
  "core-foundation",
  "core-foundation-sys",
  "libc",
@@ -661,10 +766,12 @@ dependencies = [
  "rustls-native-certs",
  "rustls-pemfile",
  "thiserror",
+ "tokio",
  "tokio-rustls",
  "tokio-util",
  "tracing",
  "uuid",
+ "winauth",
 ]
 
 [[package]]
@@ -823,6 +930,12 @@ dependencies = [
 
 [[package]]
 name = "wasi"
+version = "0.9.0+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
+
+[[package]]
+name = "wasi"
 version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
@@ -870,6 +983,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc1b4cb0cc549fcf58d7dfc081778139b3d283a081644e833e84682ad71cea24"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "winapi"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
+dependencies = [
+ "winapi-i686-pc-windows-gnu",
+ "winapi-x86_64-pc-windows-gnu",
+]
+
+[[package]]
+name = "winapi-i686-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
+
+[[package]]
+name = "winapi-x86_64-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "winauth"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f820cd208ce9c6b050812dc2d724ba98c6c1e9db5ce9b3f58d925ae5723a5e6"
+dependencies = [
+ "bitflags 1.3.2",
+ "byteorder",
+ "md5",
+ "rand",
+ "winapi",
 ]
 
 [[package]]
@@ -1026,4 +1174,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
 dependencies = [
  "toml 0.5.11",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce1022995ff5ff5d841ad7d994facc23098cd40152f2c1d11cd607c6f530653f"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]

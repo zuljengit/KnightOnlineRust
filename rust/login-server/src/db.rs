@@ -1,21 +1,22 @@
-use tiberius::{AuthMethod, Client, Config};
-use tokio::net::TcpStream;
-use tokio_util::compat::TokioAsyncWriteCompatExt;
+use bb8::{Pool, PooledConnection};
+use bb8_tiberius::ConnectionManager;
+use chrono::{NaiveDateTime, TimeDelta};
+use tiberius::{AuthMethod, Config, QueryStream, Row};
 
 use crate::config::DatabaseConfig;
 use crate::protocol::{
-    AUTH_BANNED, AUTH_IN_GAME, AUTH_NOT_FOUND, AUTH_OK, LS_LOGIN_REQ, MAX_ID_SIZE, MAX_PW_SIZE,
-    read_string2, write_string2,
+    AUTH_BANNED, AUTH_FAILED, AUTH_IN_GAME, AUTH_NOT_FOUND, AUTH_OK, LS_LOGIN_REQ, MAX_ID_SIZE,
+    MAX_PW_SIZE, read_string2, write_string2,
 };
 
 const AUTHORITY_BLOCK_USER: u8 = 255;
 
 pub struct Database {
-    config: Config,
+    pool: Pool<ConnectionManager>,
 }
 
 impl Database {
-    pub fn new(db_config: &DatabaseConfig) -> Self {
+    pub async fn new(db_config: &DatabaseConfig) -> Self {
         let mut config = Config::new();
         config.host(&db_config.host);
         config.port(db_config.port);
@@ -26,53 +27,59 @@ impl Database {
         ));
         config.trust_cert();
 
-        Database { config }
-    }
-
-    async fn connect(&self) -> Result<Client<tokio_util::compat::Compat<TcpStream>>, String> {
-        let tcp = TcpStream::connect(self.config.get_addr())
+        let manager = ConnectionManager::new(config);
+        let pool: Pool<ConnectionManager> = Pool::builder()
+            .max_size(10)
+            .build(manager)
             .await
-            .map_err(|e| format!("TCP connection failed: {}", e))?;
+            .expect("Failed to create database connection pool");
 
-        let client = Client::connect(self.config.clone(), tcp.compat_write())
-            .await
-            .map_err(|e| format!("SQL Server login failed: {}", e))?;
-
-        Ok(client)
+        Database { pool }
     }
 
     pub(crate) async fn account_login(&self, account_id: &str, password: &str) -> u8 {
-        let mut client = match self.connect().await {
+        let mut conn: PooledConnection<ConnectionManager> = match self.pool.get().await {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("Database error: {}", e);
-                return AUTH_NOT_FOUND;
+                eprintln!("Pool error in account_login: {}", e);
+                return AUTH_FAILED;
             }
         };
 
-        let query = "SELECT strPasswd, strAuthority FROM TB_USER WHERE strAccountID = @P1";
-        let stream = match client.query(query, &[&account_id]).await {
+        let query: &str = "SELECT strPasswd, strAuthority FROM TB_USER WHERE strAccountID = @P1";
+        let stream: QueryStream = match conn.query(query, &[&account_id]).await {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("Query error: {}", e);
-                return AUTH_NOT_FOUND;
+                eprintln!("Query error in account_login: {}", e);
+                return AUTH_FAILED;
             }
         };
 
-        let row = match stream.into_row().await {
+        let row: Row = match stream.into_row().await {
             Ok(Some(row)) => row,
             Ok(None) => return AUTH_NOT_FOUND,
             Err(e) => {
-                eprintln!("Row fetch error: {}", e);
-                return AUTH_NOT_FOUND;
+                eprintln!("Row fetch error in account_login: {}", e);
+                return AUTH_FAILED;
             }
         };
 
-        let db_password: &str = row.get(0).unwrap_or("");
-        let authority: u8 = row.get(1).unwrap_or(1);
+        let db_password: &str = match row.get(0) {
+            Some(pw) => pw,
+            None => {
+                eprintln!("NULL password for account: {}", account_id);
+                return AUTH_FAILED;
+            }
+        };
 
-        // Return AUTH_NOT_FOUND instead of AUTH_INVALID_PW
-        // to prevent attackers from identifying real accounts
+        let authority: u8 = match row.get(1) {
+            Some(auth) => auth,
+            None => {
+                eprintln!("NULL authority for account: {}", account_id);
+                return AUTH_FAILED;
+            }
+        };
+
         if db_password != password {
             return AUTH_NOT_FOUND;
         }
@@ -85,50 +92,101 @@ impl Database {
     }
 
     async fn is_current_user(&self, account_id: &str) -> Option<(String, i16)> {
-        let mut client = self.connect().await.ok()?;
+        let mut conn: PooledConnection<ConnectionManager> = match self.pool.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Pool error in is_current_user: {}", e);
+                return None;
+            }
+        };
 
-        let query = "SELECT strServerIP, nServerNo FROM CURRENTUSER WHERE strAccountID = @P1";
-        let stream = client.query(query, &[&account_id]).await.ok()?;
+        let query: &str = "SELECT strServerIP, nServerNo FROM CURRENTUSER WHERE strAccountID = @P1";
+        let stream: QueryStream = match conn.query(query, &[&account_id]).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Query error in is_current_user: {}", e);
+                return None;
+            }
+        };
 
-        let row = stream.into_row().await.ok()??;
+        let row: Row = match stream.into_row().await {
+            Ok(Some(row)) => row,
+            Ok(None) => return None,
+            Err(e) => {
+                eprintln!("Row fetch error in is_current_user: {}", e);
+                return None;
+            }
+        };
 
-        let server_ip: &str = row.get(0)?;
-        let server_no: i32 = row.get(1)?;
+        let server_ip: &str = match row.get(0) {
+            Some(ip) => ip,
+            None => {
+                eprintln!("NULL server IP for account: {}", account_id);
+                return None;
+            }
+        };
 
-        Some((server_ip.to_string(), server_no as i16))
+        let server_no_raw: i32 = match row.get(1) {
+            Some(no) => no,
+            None => {
+                eprintln!("NULL server number for account: {}", account_id);
+                return None;
+            }
+        };
+
+        let server_no: i16 = match i16::try_from(server_no_raw) {
+            Ok(n) => n,
+            Err(_) => {
+                eprintln!(
+                    "Server number {} out of i16 range for account: {}",
+                    server_no_raw, account_id
+                );
+                return None;
+            }
+        };
+
+        Some((server_ip.to_string(), server_no))
     }
 
     async fn load_premium_days(&self, account_id: &str) -> i16 {
-        let mut client = match self.connect().await {
+        let mut conn: PooledConnection<ConnectionManager> = match self.pool.get().await {
             Ok(c) => c,
-            Err(_) => return -1,
+            Err(e) => {
+                eprintln!("Pool error in load_premium_days: {}", e);
+                return -1;
+            }
         };
 
-        let query = "SELECT PremiumExpire FROM TB_USER WHERE strAccountID = @P1";
-        let stream = match client.query(query, &[&account_id]).await {
+        let query: &str = "SELECT PremiumExpire FROM TB_USER WHERE strAccountID = @P1";
+        let stream: QueryStream = match conn.query(query, &[&account_id]).await {
             Ok(s) => s,
-            Err(_) => return -1,
+            Err(e) => {
+                eprintln!("Query error in load_premium_days: {}", e);
+                return -1;
+            }
         };
 
-        let row = match stream.into_row().await {
+        let row: Row = match stream.into_row().await {
             Ok(Some(row)) => row,
-            _ => return -1,
+            Ok(None) => return -1,
+            Err(e) => {
+                eprintln!("Row fetch error in load_premium_days: {}", e);
+                return -1;
+            }
         };
 
-        // Calculate days remaining from PremiumExpire
-        let expire: Option<chrono::NaiveDateTime> = row.get(0);
+        let expire: Option<NaiveDateTime> = row.get(0);
         match expire {
             Some(dt) => {
-                let now = chrono::Local::now().naive_local();
-                let diff = dt.signed_duration_since(now);
-                let days = diff.num_days();
+                let now: NaiveDateTime = chrono::Local::now().naive_local();
+                let diff: TimeDelta = dt.signed_duration_since(now);
+                let days: i64 = diff.num_days();
                 if days > 0 { days as i16 } else { -1 }
             }
             None => -1,
         }
     }
 
-    /// Handles the full LS_LOGIN_REQ flow: validate, authenticate, check current user, premium
     pub async fn handle_login(&self, payload: &[u8]) -> Option<Vec<u8>> {
         let auth_not_found_reply: fn() -> Option<Vec<u8>> =
             || Some(vec![LS_LOGIN_REQ, AUTH_NOT_FOUND]);
@@ -149,7 +207,7 @@ impl Database {
             return auth_not_found_reply();
         }
 
-        let auth_result = self.account_login(&account_id, &password).await;
+        let auth_result: u8 = self.account_login(&account_id, &password).await;
 
         if auth_result != AUTH_OK {
             return Some(vec![LS_LOGIN_REQ, auth_result]);
@@ -164,11 +222,56 @@ impl Database {
             return Some(reply);
         }
 
-        let premium_days = self.load_premium_days(&account_id).await;
+        let premium_days: i16 = self.load_premium_days(&account_id).await;
         let mut reply: Vec<u8> = Vec::new();
         reply.push(LS_LOGIN_REQ);
         reply.push(AUTH_OK);
         reply.extend_from_slice(&premium_days.to_le_bytes());
         Some(reply)
+    }
+
+    pub async fn load_user_counts(&self) -> Vec<(u8, i16)> {
+        let mut conn: PooledConnection<ConnectionManager> = match self.pool.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Pool error in load_user_counts: {}", e);
+                return vec![];
+            }
+        };
+
+        let query: &str =
+            "SELECT serverid, zone1_count + zone2_count + zone3_count FROM CONCURRENT";
+        let stream: QueryStream = match conn.query(query, &[]).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Query error in load_user_counts: {}", e);
+                return vec![];
+            }
+        };
+
+        let rows: Vec<Row> = match stream.into_results().await {
+            Ok(mut results) => {
+                if results.is_empty() {
+                    return vec![];
+                }
+                results.remove(0)
+            }
+            Err(e) => {
+                eprintln!("Row fetch error in load_user_counts: {}", e);
+                return vec![];
+            }
+        };
+
+        let mut counts: Vec<(u8, i16)> = Vec::new();
+        for row in rows {
+            let server_id: u8 = match row.get(0) {
+                Some(id) => id,
+                None => continue,
+            };
+            let total: i16 = row.get(1).unwrap_or_default();
+            counts.push((server_id, total));
+        }
+
+        counts
     }
 }
